@@ -13,6 +13,15 @@ import {
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { v4 as uuidv4 } from "uuid";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 const actionUrl = process.env.NEXT_PUBLIC_API_LINK;
 const Chat = () => {
@@ -23,13 +32,26 @@ const Chat = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setUploading] = useState(false);
   const [chatId, setChatId] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [chatAs, setChatAs] = useState(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const { data: userResp } = await axios.get(`${actionUrl}/users`);
+      setUsers(userResp.response);
+    };
+
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     const fetchChatId = async () => {
-      const { data } = await axios.post(`${actionUrl}/chats/start-chat`, {
-        customerId: userId, // Get this from auth
-      });
-      setChatId(data.chatId);
+      if (chatAs) {
+        const { data } = await axios.post(`${actionUrl}/chats/start-chat`, {
+          customerId: chatAs,
+        });
+        setChatId(data.chatId);
+      }
     };
 
     fetchChatId();
@@ -40,20 +62,26 @@ const Chat = () => {
       socket.emit("joinRoom", { chatId });
     }
 
-    socket.on("receiveMessage", (newMessage) => {
+    const messageListener = (newMessage) => {
       if (newMessage.chatId === chatId) {
         setMessages((prev) => [...prev, newMessage]);
       }
-    });
+    };
+
+    socket.off("receiveMessage").on("receiveMessage", messageListener);
 
     if (chatId) {
       getMessages();
     }
 
     return () => {
-      socket.off("receiveMessage");
+      socket.off("receiveMessage", messageListener);
     };
   }, [chatId]);
+
+  const onSelectChange = (value) => {
+    setChatAs(value);
+  };
 
   const getMessages = async () => {
     if (!chatId) return;
@@ -87,9 +115,10 @@ const Chat = () => {
         setUploadProgress(0);
       }
 
+      const downloadUrl = await getSignDownloadUrl(fileKey);
       fileData = {
         fileName: file.name,
-        fileUrl: data.uploadUrl,
+        fileUrl: downloadUrl,
         fileType: file.type,
         fileKey,
       };
@@ -101,12 +130,22 @@ const Chat = () => {
       content: message,
       file: fileData,
     };
-    socket.emit("sendMessage", newMessage);
+    
+    socket.emit("sendMessage", newMessage, (confirmedMessage) => {
+      setMessages((prev) => [...prev, confirmedMessage]);
+    });
 
-    setMessages((prev) => [...prev, newMessage]);
     setMessage("");
     setFile(null);
     setUploading(false);
+  };
+
+  const getSignDownloadUrl = async (fileKey) => {
+    const { data } = await axios.post(`${actionUrl}/file/download-url`, {
+      fileKey,
+    });
+
+    return data.downloadUrl;
   };
 
   return (
@@ -116,18 +155,35 @@ const Chat = () => {
       </PopoverTrigger>
       <PopoverContent>
         <div>
-          <ScrollArea className="h-64 overflow-y-auto border rounded-lg flex ">
+          <ScrollArea className="h-64 overflow-y-auto border rounded-lg flex p-4 ">
             {messages.map((msg, index) => (
               <div
                 key={index}
                 className={`mb-3 p-1 ${
                   msg.senderId === socket.id
-                    ? "place-items-start bg-slate-400"
-                    : "place-items-end bg-green-400"
+                    ? "place-items-start "
+                    : "place-items-end "
                 }`}
               >
-                <p className="text-sm text-gray-700">{msg.content}</p>
-                {msg.file && (
+                {msg.content && (
+                  <div
+                    className={`w-10/12 rounded-lg p-2 ${
+                      msg.senderId === socket.id
+                        ? "bg-slate-400"
+                        : "bg-green-400"
+                    } `}
+                  >
+                    <p className="text-sm text-gray-700 ">{msg.content}</p>
+                  </div>
+                )}
+                {console.log("Message File ", msg.fileUrl)}
+                {msg.file && msg.file.fileType.startsWith("image/") ? (
+                  <img
+                    src={msg.file.fileUrl}
+                    alt="Sent"
+                    className="max-w-xs max-h-40 rounded-lg border"
+                  />
+                ) : msg.file ? (
                   <a
                     href={msg.file.fileUrl}
                     target="_blank"
@@ -136,12 +192,31 @@ const Chat = () => {
                   >
                     {msg.file.fileName}
                   </a>
-                )}
+                ) : null}
               </div>
             ))}
           </ScrollArea>
+          <div className="py-4">
+            <Select className="" onValueChange={onSelectChange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Chat As" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Chat As</SelectLabel>
+                  {users?.map((user) => {
+                    return (
+                      <SelectItem key={user?.id} value={user?.id}>
+                        {user.role}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="w-full h-1">
-            <Progress value={uploadProgress} />
+            <Progress className="h-[4px] my-[2px]" value={uploadProgress} />
           </div>
           <div className="grid gap-2 items-center">
             <div className="flex flex-row justify-between items-center py-1">
