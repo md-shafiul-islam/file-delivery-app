@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import Footer from "@/components/Footer";
+import Chat from "@/components/Chat/Chat";
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,6 +27,9 @@ export default function RootLayout({
         >
           {children}
         </ThemeProvider>
+        <div className="fixed right-7 bottom-7 h-10 w-10 ring-1 flex items-center justify-center bg-green-600 rounded-full cursor-pointer">
+          <Chat />
+        </div>
         <Footer />
       </body>
     </html>
